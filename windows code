@@ -1,0 +1,65 @@
+import cv2
+import mediapipe as mp
+import math
+import ctypes
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
+cap = cv2.VideoCapture(0)
+mpHands = mp.solutions.hands
+hands = mpHands.Hands()
+mpDraw = mp.solutions.drawing_utils
+fingerCoordinates = [(8, 6), (12, 10), (16, 14), (20, 18)]
+thumbCoordinate = (4, 2)
+
+previous_distance = 0
+
+def set_volume_level(volume_level):
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    volume = ctypes.cast(interface, ctypes.POINTER(IAudioEndpointVolume))
+    volume.SetMasterVolumeLevelScalar(volume_level, None)
+
+while True:
+    success, img = cap.read()
+    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = hands.process(imgRGB)
+    multiLandMarks = results.multi_hand_landmarks 
+
+    if multiLandMarks:
+        handPoints = []
+        for handlms in multiLandMarks:
+            mpDraw.draw_landmarks(img, handlms, mpHands.HAND_CONNECTIONS)
+
+            for idx, lm in enumerate(handlms.landmark):
+                h, w, c = img.shape
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                handPoints.append((cx, cy))
+
+        for point in handPoints:
+            cv2.circle(img, point, 10, (0, 0, 255), cv2.FILLED)
+
+       
+        thumb_tip = handPoints[thumbCoordinate[0]]
+        index_tip = handPoints[fingerCoordinates[0][0]]
+        cv2.line(img, thumb_tip, index_tip, (0, 255, 0), 2)
+
+        
+        distance = math.sqrt((index_tip[0] - thumb_tip[0])**2 + (index_tip[1] - thumb_tip[1])**2)
+
+        if distance > previous_distance:
+            set_volume_level(min(1.0, previous_distance + 0.1))  # Increase volume
+            print("Volume Increased")
+        elif distance < previous_distance:
+            set_volume_level(max(0.0, previous_distance - 0.1))  # Decrease volume
+            print("Volume Decreased")
+
+        previous_distance = distance
+
+    cv2.imshow("FINGERS", img)
+    key = cv2.waitKey(1)
+    if key == 27 or key == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
